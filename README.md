@@ -616,6 +616,7 @@ The repository includes **25+ comprehensive examples** covering all features:
 ### **Production Ready**
 - [17_production_chatbot](./examples/17_production_chatbot) - Complete chatbot
 - [18_type_safe_tools](./examples/18_type_safe_tools) - Type-safe tools
+- [26_code_review_agent](./examples/26_code_review_agent) - Code review agent (structured findings, repo-convention loading, guardrails)
 
 **Run any example:**
 

@@ -60,6 +60,13 @@ type Request struct {
 	// Specialists overrides the configured specialist roster for this
 	// request only (deep-review mode). Empty uses the Reviewer's roster.
 	Specialists []Specialist
+
+	// Conventions is project-specific guidance (coding standards, review
+	// rules) rendered into the prompt, typically the content of AGENTS.md
+	// or CLAUDE.md. When empty and a WorkspaceRoot is set, well-known
+	// instruction files are discovered automatically from the workspace
+	// root (see DiscoverConventions). Set to "-" to disable discovery.
+	Conventions string
 }
 
 // Validate checks that the request contains enough material to review.

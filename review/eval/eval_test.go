@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -230,6 +231,64 @@ func TestRunAggregation(t *testing.T) {
 		if !strings.Contains(text, want) {
 			t.Errorf("report text missing %q:\n%s", want, text)
 		}
+	}
+}
+
+func TestRenderComparison(t *testing.T) {
+	baseline := &Report{
+		Recall: 0.5, Unexpected: 3, VerdictAccuracy: 0.8, TotalTokens: 1000,
+		Results: []CaseResult{
+			{Case: "a", Pass: true},
+			{Case: "b", Pass: false},
+			{Case: "c", Pass: true},
+		},
+	}
+	current := &Report{
+		Recall: 0.75, Unexpected: 1, VerdictAccuracy: 1.0, TotalTokens: 1400,
+		Results: []CaseResult{
+			{Case: "a", Pass: true},
+			{Case: "b", Pass: true},       // fixed
+			{Case: "c", Pass: false},      // regressed
+			{Case: "newcase", Pass: true}, // new case: not a transition
+		},
+	}
+
+	text := current.RenderComparison(baseline)
+	for _, want := range []string{
+		"recall:           50% -> 75% (+25 pt)",
+		"noise findings:   3 -> 1 (-2)",
+		"tokens:           1000 -> 1400 (+400)",
+		"fixed:            b",
+		"REGRESSED:        c",
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("comparison missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "newcase") {
+		t.Error("new cases must not appear as transitions")
+	}
+}
+
+func TestLoadReportRoundTrip(t *testing.T) {
+	rep := &Report{Recall: 0.9, Cases: 2, Passed: 2}
+	data, err := json.Marshal(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := t.TempDir() + "/report.json"
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadReport(path)
+	if err != nil {
+		t.Fatalf("LoadReport: %v", err)
+	}
+	if loaded.Recall != 0.9 || loaded.Cases != 2 {
+		t.Errorf("round trip mismatch: %+v", loaded)
+	}
+	if _, err := LoadReport(t.TempDir() + "/missing.json"); err == nil {
+		t.Error("missing report must error")
 	}
 }
 

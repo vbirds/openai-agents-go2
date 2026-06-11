@@ -62,6 +62,15 @@ Key decisions:
   duplicates, calibrates severity/confidence, and synthesizes the final
   result in the requested schema. Specialist failures degrade to warnings,
   never failed reviews.
+- **Project conventions, like codex reads AGENTS.md.** With a workspace, the
+  reviewer auto-discovers `AGENTS.md`, `AGENT.md`, `CLAUDE.md`,
+  `.codereview.md`, or `CONTRIBUTING.md` at the root and injects them into
+  the review context, so it judges changes against the project's own rules.
+  Override with `Request.Conventions` / `-conventions file` (or `"-"` /
+  `-conventions none` to disable).
+- **Anchor hygiene.** Finding locations are normalized in code (diff-style
+  `a/`/`b/` prefixes stripped, inverted line ranges swapped, negatives
+  clamped) so PR annotations and CI gates get clean anchors.
 - **Agentic exploration (optional).** Setting `Request.WorkspaceRoot` gives
   the reviewer read-only tools — `read_file` (line-numbered), `grep` (RE2,
   `path:line` matches), `list_dir` — sandboxed to the project directory
@@ -237,6 +246,7 @@ codereview -git origin/main..HEAD -fail-on high
 | `-workspace path` | Enable agentic exploration rooted at this directory (read-only) |
 | `-max-turns n` | Exploration turn budget (default 16; requires `-workspace`) |
 | `-deep` | Multi-agent pipeline: triage → parallel specialists → adjudicator |
+| `-conventions path` | Project instruction file (default: AGENTS.md etc. auto-discovered at the workspace root; `none` disables) |
 | `-review-config path` | Specialist config file (default: `.codereview.yaml` at the workspace root) |
 | `-model`, `-base-url`, `-temperature`, `-max-output-tokens` | Model settings (env: `OPENAI_MODEL`, `OPENAI_BASE_URL`) |
 | `-timeout`, `-max-retries`, `-max-input-kb` | Run limits |
@@ -266,6 +276,10 @@ codereview-eval -cases review/eval/testdata/cases -deep -runs 3
 
 # Quality gate before merging prompt/pipeline changes
 codereview-eval -cases review/eval/testdata/cases -fail-under 0.8 -out report.json
+
+# Iterate: compare against the last saved report (shows recall/noise deltas,
+# fixed and regressed cases)
+codereview-eval -cases review/eval/testdata/cases -baseline report.json
 ```
 
 A case is a directory: `case.yaml` (expectations) + `diff.patch` + optional

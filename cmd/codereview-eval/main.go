@@ -58,6 +58,7 @@ func run() int {
 	timeout := fs.Duration("timeout", 10*time.Minute, "per-case review timeout")
 
 	out := fs.String("out", "", "write the JSON report to a file")
+	baseline := fs.String("baseline", "", "compare against a previous JSON report (-out from an earlier run)")
 	failUnder := fs.Float64("fail-under", 0, "exit 3 if recall falls below this fraction (0 disables)")
 	verbose := fs.Bool("v", false, "verbose reviewer logging to stderr")
 
@@ -121,6 +122,16 @@ func run() int {
 	}
 
 	fmt.Print(report.RenderText())
+
+	if *baseline != "" {
+		base, err := eval.LoadReport(*baseline)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			return exitFailure
+		}
+		fmt.Println()
+		fmt.Print(report.RenderComparison(base))
+	}
 
 	if *out != "" {
 		data, err := json.MarshalIndent(report, "", "  ")

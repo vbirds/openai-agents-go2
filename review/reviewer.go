@@ -83,6 +83,18 @@ func (rv *Reviewer) Review(ctx context.Context, req *Request) (*Response, error)
 		}
 	}
 
+	// Teach the reviewer the project's own rules: discover AGENTS.md-style
+	// instruction files from the workspace unless the caller provided
+	// conventions ("-" opts out). Work on a copy; requests are caller-owned.
+	if req.Conventions == "" && ws != nil {
+		if content, found := DiscoverConventions(ws.root); content != "" {
+			reqCopy := *req
+			reqCopy.Conventions = content
+			req = &reqCopy
+			rv.cfg.logger.InfoContext(ctx, "project conventions discovered", "files", found)
+		}
+	}
+
 	if rv.cfg.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, rv.cfg.timeout)
@@ -310,6 +322,7 @@ func (rv *Reviewer) buildResponse(
 			return nil, &OutputError{RawOutput: string(output),
 				Reason: fmt.Errorf("output validated but failed to parse as Review: %w", err)}
 		}
+		normalizeFindings(&parsed)
 		resp.Review = &parsed
 	}
 	rv.cfg.logger.Info("review complete",
@@ -369,6 +382,29 @@ func extractJSON(s string) (json.RawMessage, error) {
 		}
 	}
 	return nil, fmt.Errorf("output does not contain a valid JSON document")
+}
+
+// normalizeFindings repairs common anchor defects in model output so
+// downstream consumers (PR annotations, SARIF, -fail-on) get clean
+// locations: diff-style a/ b/ path prefixes are stripped, inverted line
+// ranges are swapped, and negative line numbers are clamped to 0.
+func normalizeFindings(rev *Review) {
+	for i := range rev.Findings {
+		f := &rev.Findings[i]
+		f.File = strings.TrimPrefix(f.File, "./")
+		if strings.HasPrefix(f.File, "a/") || strings.HasPrefix(f.File, "b/") {
+			f.File = f.File[2:]
+		}
+		if f.LineStart < 0 {
+			f.LineStart = 0
+		}
+		if f.LineEnd < 0 {
+			f.LineEnd = 0
+		}
+		if f.LineEnd != 0 && f.LineStart != 0 && f.LineEnd < f.LineStart {
+			f.LineStart, f.LineEnd = f.LineEnd, f.LineStart
+		}
+	}
 }
 
 // clip shortens a string for log output.

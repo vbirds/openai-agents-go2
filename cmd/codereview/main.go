@@ -66,10 +66,11 @@ type cliOptions struct {
 	prompt     string
 	promptFile string
 	schemaPath string
-	workspace  string
-	maxTurns   int
-	deep       bool
-	configPath string
+	workspace       string
+	maxTurns        int
+	deep            bool
+	configPath      string
+	conventionsPath string
 
 	model           string
 	baseURL         string
@@ -179,6 +180,7 @@ Flags:
 	fs.StringVar(&opts.promptFile, "prompt-file", "", "read review guidance from a file")
 	fs.StringVar(&opts.schemaPath, "schema", "", "path to a custom output JSON Schema; default is the built-in review schema")
 	fs.StringVar(&opts.workspace, "workspace", "", "enable agentic exploration: project root the reviewer may read (read-only) to inspect callers, usages, and tests; use '.' for the current directory")
+	fs.StringVar(&opts.conventionsPath, "conventions", "", "project instruction file injected into the review (default: AGENTS.md/CLAUDE.md etc. auto-discovered at the workspace root; 'none' disables)")
 	fs.IntVar(&opts.maxTurns, "max-turns", 0, "exploration turn budget (default 16; only with -workspace)")
 	fs.BoolVar(&opts.deep, "deep", false, "deep review: triage routes the change to specialist reviewers running in parallel; an adjudicator verifies findings before the final result")
 	fs.StringVar(&opts.configPath, "review-config", "", "path to a .codereview.yaml specialist configuration (default: auto-discovered at the -workspace root)")

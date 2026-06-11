@@ -76,6 +76,19 @@ func buildRequest(opts *cliOptions, filePaths []string) (*review.Request, error)
 		req.Schema = data
 	}
 
+	switch opts.conventionsPath {
+	case "":
+		// Auto-discovered from the workspace root by the review package.
+	case "none":
+		req.Conventions = "-"
+	default:
+		data, err := os.ReadFile(opts.conventionsPath)
+		if err != nil {
+			return nil, fmt.Errorf("reading conventions file: %w", err)
+		}
+		req.Conventions = string(data)
+	}
+
 	if strings.TrimSpace(req.Diff) == "" && len(req.Files) == 0 {
 		return nil, fmt.Errorf("nothing to review: provide -diff, -git, -svn, or file arguments (see -h)")
 	}

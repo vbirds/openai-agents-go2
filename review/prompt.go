@@ -75,6 +75,14 @@ func buildUserMessage(req *Request, maxBytes int) (string, []string) {
 		b.WriteString("\n")
 	}
 
+	if conv := strings.TrimSpace(req.Conventions); conv != "" && conv != "-" {
+		b.WriteString("## Project conventions and guidelines\n\nFollow these project-specific rules when judging the change:\n\n")
+		text, w := truncateTo(conv, remaining(maxBytes, b.Len())/4, "project conventions")
+		warnings = append(warnings, w...)
+		b.WriteString(text)
+		b.WriteString("\n\n")
+	}
+
 	if strings.TrimSpace(req.Prompt) != "" {
 		b.WriteString("## Review instructions from the requester\n\n")
 		b.WriteString(strings.TrimSpace(req.Prompt))

@@ -18,7 +18,7 @@ const maxContextFiles = 50
 // buildRequest collects the diff, context files, prompt, and schema into a
 // review request.
 func buildRequest(opts *cliOptions, filePaths []string) (*review.Request, error) {
-	req := &review.Request{}
+	req := &review.Request{WorkspaceRoot: opts.workspace}
 
 	switch {
 	case opts.gitRange != "":

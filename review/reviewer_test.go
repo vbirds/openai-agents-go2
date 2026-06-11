@@ -248,6 +248,124 @@ func TestReviewCustomSchemaPromptFallback(t *testing.T) {
 	}
 }
 
+// scriptedModel plays back full assistant messages, allowing tool calls.
+type scriptedModel struct {
+	script   []openai.ChatCompletionMessage
+	calls    int
+	requests []openai.ChatCompletionNewParams
+}
+
+func (m *scriptedModel) GetResponse(_ context.Context, params openai.ChatCompletionNewParams, _ models.ModelSettings) (*models.ModelResponse, error) {
+	m.requests = append(m.requests, params)
+	if m.calls >= len(m.script) {
+		return nil, errors.New("scriptedModel: no more scripted responses")
+	}
+	msg := m.script[m.calls]
+	m.calls++
+	finish := "stop"
+	if len(msg.ToolCalls) > 0 {
+		finish = "tool_calls"
+	}
+	return &models.ModelResponse{
+		Completion: &openai.ChatCompletion{
+			Choices: []openai.ChatCompletionChoice{{Message: msg, FinishReason: finish}},
+		},
+		Usage: models.ModelUsage{PromptTokens: 100, CompletionTokens: 50, TotalTokens: 150},
+	}, nil
+}
+
+func (m *scriptedModel) StreamResponse(context.Context, openai.ChatCompletionNewParams, models.ModelSettings) (*ssestream.Stream[openai.ChatCompletionChunk], error) {
+	return nil, errors.New("scriptedModel: streaming not supported")
+}
+
+func (m *scriptedModel) ModelName() string { return "scripted-model" }
+
+type scriptedProvider struct{ model *scriptedModel }
+
+func (p *scriptedProvider) GetModel(string) (models.Model, error) { return p.model, nil }
+
+func TestReviewWithWorkspaceExploration(t *testing.T) {
+	ws, _ := newTestWorkspace(t)
+
+	model := &scriptedModel{script: []openai.ChatCompletionMessage{
+		{
+			Role: "assistant",
+			ToolCalls: []openai.ChatCompletionMessageToolCallUnion{{
+				ID:   "call_1",
+				Type: "function",
+				Function: openai.ChatCompletionMessageFunctionToolCallFunction{
+					Name:      "grep",
+					Arguments: `{"pattern":"TargetFunc"}`,
+				},
+			}},
+		},
+		{Role: "assistant", Content: validReviewJSON},
+	}}
+
+	r, err := New(WithModelProvider(&scriptedProvider{model: model}))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req := defaultRequest()
+	req.WorkspaceRoot = ws.root
+
+	resp, err := r.Review(context.Background(), req)
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if resp.ToolCalls != 1 {
+		t.Errorf("tool calls = %d, want 1", resp.ToolCalls)
+	}
+	if resp.Turns != 2 {
+		t.Errorf("turns = %d, want 2", resp.Turns)
+	}
+	if resp.Review == nil || resp.Review.Verdict != VerdictRequestChanges {
+		t.Errorf("unexpected review: %+v", resp.Review)
+	}
+
+	// The first request must expose the exploration tools and the
+	// exploration instructions.
+	if len(model.requests[0].Tools) != 3 {
+		t.Errorf("tools advertised = %d, want 3", len(model.requests[0].Tools))
+	}
+	sys := model.requests[0].Messages[0].OfSystem
+	if sys == nil || !strings.Contains(sys.Content.OfString.Value, "read-only tools") {
+		t.Error("expected exploration instructions in system prompt")
+	}
+
+	// The second request must carry the grep result back to the model.
+	foundToolResult := false
+	for _, msg := range model.requests[1].Messages {
+		if tm := msg.OfTool; tm != nil && strings.Contains(tm.Content.OfString.Value, "util.go") {
+			foundToolResult = true
+		}
+	}
+	if !foundToolResult {
+		t.Error("expected grep tool result in the follow-up request")
+	}
+}
+
+func TestReviewWithoutWorkspaceHasNoTools(t *testing.T) {
+	model := &fakeModel{responses: []string{validReviewJSON}}
+	r := newTestReviewer(t, model)
+	if _, err := r.Review(context.Background(), defaultRequest()); err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if len(model.requests[0].Tools) != 0 {
+		t.Errorf("single-shot review must not advertise tools, got %d", len(model.requests[0].Tools))
+	}
+}
+
+func TestReviewRejectsBadWorkspace(t *testing.T) {
+	r := newTestReviewer(t, &fakeModel{})
+	req := defaultRequest()
+	req.WorkspaceRoot = "/no/such/dir-xyz"
+	if _, err := r.Review(context.Background(), req); !errors.Is(err, ErrInvalidRequest) {
+		t.Errorf("err = %v, want ErrInvalidRequest", err)
+	}
+}
+
 func TestReviewInvalidRequest(t *testing.T) {
 	r := newTestReviewer(t, &fakeModel{})
 

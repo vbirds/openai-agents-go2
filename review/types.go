@@ -49,6 +49,13 @@ type Request struct {
 	// Metadata is arbitrary contextual information rendered into the prompt,
 	// e.g. {"repository": "acme/api", "pull_request": "#42"}. Optional.
 	Metadata map[string]string
+
+	// WorkspaceRoot enables agentic exploration: when set to a project
+	// directory, the reviewer gets read-only tools (read_file, grep,
+	// list_dir) sandboxed to that directory and will autonomously inspect
+	// callers, usages, and tests of the changed code before judging it.
+	// Leave empty for single-shot review of the provided inputs only.
+	WorkspaceRoot string
 }
 
 // Validate checks that the request contains enough material to review.
@@ -100,6 +107,14 @@ type Response struct {
 	// Retries is the number of corrective retries that were needed before
 	// the output validated against the schema.
 	Retries int `json:"retries"`
+
+	// Turns is the total number of agent loop iterations across all
+	// attempts. Greater than 1 indicates the reviewer explored the
+	// workspace with tools before answering.
+	Turns int `json:"turns"`
+
+	// ToolCalls is the total number of exploration tool invocations.
+	ToolCalls int `json:"tool_calls"`
 
 	// Warnings lists non-fatal conditions encountered during the run, such
 	// as input truncation or fallback to prompt-enforced schema mode.

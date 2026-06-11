@@ -20,6 +20,14 @@ func TestParseFlags(t *testing.T) {
 	if len(files) != 2 || files[0] != "a.go" {
 		t.Errorf("files = %v", files)
 	}
+
+	opts, _, err = parseFlags([]string{"-git", "HEAD~1", "-workspace", ".", "-max-turns", "8"})
+	if err != nil {
+		t.Fatalf("parseFlags with workspace: %v", err)
+	}
+	if opts.workspace != "." || opts.maxTurns != 8 {
+		t.Errorf("workspace opts not parsed: %+v", opts)
+	}
 }
 
 func TestParseFlagsRejectsConflicts(t *testing.T) {
@@ -31,6 +39,7 @@ func TestParseFlagsRejectsConflicts(t *testing.T) {
 		{"-format", "xml"},
 		{"-format", "markdown", "-schema", "s.json"},
 		{"-fail-on", "high", "-schema", "s.json"},
+		{"-max-turns", "5"}, // requires -workspace
 	}
 	for _, args := range cases {
 		if _, _, err := parseFlags(args); err == nil {

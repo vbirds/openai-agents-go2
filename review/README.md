@@ -15,19 +15,32 @@ Two ways to use it:
 ```
             ┌────────────────────── review.Reviewer ──────────────────────┐
  Request    │                                                             │
- ──────────►│ validate ─► compile schema ─► build prompt ─► agent run ──┐ │
- diff,files │              │                  (truncation   (structured │ │
- prompt,    │              │ native? ──────►   + line nums)  outputs)   │ │
- schema     │              │ prompt-mode? ─►  schema in prompt          │ │
-            │              ▼                                            ▼ │
+ ──────────►│ validate ─► compile schema ─► build prompt ─► agent loop ─┐ │
+ diff,files │              │                  (truncation       │  ▲    │ │
+ prompt,    │              │ native? ──────►   + line nums)     ▼  │    │ │
+ schema,    │              │ prompt-mode? ─►  schema in    read_file    │ │
+ workspace  │              ▼                  prompt       grep         │ │
+            │                                              list_dir     │ │
+            │                                            (sandboxed,    ▼ │
             │        client-side JSON Schema validation ◄── extract JSON  │
             │              │ invalid? feed error back, retry (≤ N)        │
             └──────────────┼──────────────────────────────────────────────┘
                            ▼
-                       Response{Output, Review, Usage, Warnings, ...}
+              Response{Output, Review, Usage, Turns, ToolCalls, ...}
 ```
 
 Key decisions:
+
+- **Agentic exploration (optional).** Setting `Request.WorkspaceRoot` gives
+  the reviewer read-only tools — `read_file` (line-numbered), `grep` (RE2,
+  `path:line` matches), `list_dir` — sandboxed to the project directory
+  (symlink escapes and `..` traversal are rejected; `.git`, `node_modules`
+  etc. are excluded). The agent follows a built-in investigation strategy:
+  identify changed symbols, grep their usages, read call sites and tests,
+  verify findings against real code before reporting them. Turn budget is
+  capped (`WithMaxTurns`, default 16). Without a workspace the review is
+  single-shot — cheaper, and usable where the filesystem isn't available
+  (e.g. reviewing webhook-delivered diffs server-side).
 
 - **Schema-first output.** When no schema is given, a built-in review schema is
   used (codex-cli-inspired: verdict + severity-ranked findings anchored to
@@ -77,6 +90,19 @@ for _, f := range resp.Review.Findings {
 }
 ```
 
+### Agentic exploration
+
+Point the reviewer at the project root and it will autonomously inspect
+callers, usages, and tests of the changed code (read-only) before judging:
+
+```go
+resp, err := reviewer.Review(ctx, &review.Request{
+    Diff:          diffText,
+    WorkspaceRoot: "/path/to/repo", // enables read_file / grep / list_dir
+})
+// resp.Turns and resp.ToolCalls report how much exploration happened.
+```
+
 ### Custom output schema
 
 ```go
@@ -110,6 +136,10 @@ export OPENAI_API_KEY=sk-...
 # Review the last commit (changed files are loaded automatically)
 codereview -git HEAD~1..HEAD
 
+# Agentic review: explore the project (read-only) to verify callers,
+# usages, and tests of the changed code before judging it
+codereview -git HEAD~1..HEAD -workspace .
+
 # Subversion: review uncommitted working-copy changes, a committed
 # revision, or a revision range
 codereview -svn wc
@@ -134,6 +164,8 @@ codereview -git origin/main..HEAD -fail-on high
 | `[file ...]` | Positional args: extra files included as full-file context |
 | `-prompt` / `-prompt-file` | Reviewer guidance |
 | `-schema path` | Custom output JSON Schema (default: built-in review schema) |
+| `-workspace path` | Enable agentic exploration rooted at this directory (read-only) |
+| `-max-turns n` | Exploration turn budget (default 16; requires `-workspace`) |
 | `-model`, `-base-url`, `-temperature`, `-max-output-tokens` | Model settings (env: `OPENAI_MODEL`, `OPENAI_BASE_URL`) |
 | `-timeout`, `-max-retries`, `-max-input-kb` | Run limits |
 | `-format json\|markdown`, `-out path` | Output control |

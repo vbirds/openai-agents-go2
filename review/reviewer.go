@@ -3,6 +3,7 @@ package review
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -69,8 +70,15 @@ func (rv *Reviewer) Review(ctx context.Context, req *Request) (*Response, error)
 		return nil, err
 	}
 
+	var ws *workspace
+	if req.WorkspaceRoot != "" {
+		if ws, err = newWorkspace(req.WorkspaceRoot); err != nil {
+			return nil, err
+		}
+	}
+
 	var warnings []string
-	agent, w := rv.buildAgent(schema)
+	agent, w := rv.buildAgent(schema, ws)
 	warnings = append(warnings, w...)
 
 	userMsg, w := buildUserMessage(req, rv.cfg.maxInputBytes)
@@ -87,6 +95,12 @@ func (rv *Reviewer) Review(ctx context.Context, req *Request) (*Response, error)
 
 	runConfig := agents.DefaultRunConfig()
 	runConfig.MaxTurns = 1
+	if ws != nil {
+		runConfig.MaxTurns = rv.cfg.maxTurns
+		if runConfig.MaxTurns == 0 {
+			runConfig.MaxTurns = DefaultExplorationTurns
+		}
+	}
 	runConfig.Timeout = rv.cfg.timeout
 	runConfig.TraceWorkflowName = "Code review"
 
@@ -95,31 +109,45 @@ func (rv *Reviewer) Review(ctx context.Context, req *Request) (*Response, error)
 	}
 
 	var usage Usage
+	var turns, toolCalls int
 	var lastOutput string
 	var lastErr error
 
 	for attempt := 0; attempt <= rv.cfg.maxOutputRetries; attempt++ {
 		rv.cfg.logger.InfoContext(ctx, "running review",
-			"model", rv.cfg.model, "attempt", attempt+1)
+			"model", rv.cfg.model, "attempt", attempt+1, "max_turns", runConfig.MaxTurns)
 
 		result, err := rv.runner.Run(ctx, agent, messages, agents.WithConfig(runConfig))
 		if err != nil {
+			if errors.Is(err, agents.ErrMaxTurnsExceeded) {
+				return nil, fmt.Errorf("review: exploration did not finish within %d turns (raise WithMaxTurns or narrow the change): %w", runConfig.MaxTurns, err)
+			}
 			return nil, fmt.Errorf("review: model run failed: %w", err)
 		}
 		usage.PromptTokens += result.Usage.PromptTokens
 		usage.CompletionTokens += result.Usage.CompletionTokens
 		usage.TotalTokens += result.Usage.TotalTokens
+		turns += len(result.Steps)
+		for _, step := range result.Steps {
+			toolCalls += len(step.ToolCalls)
+			for _, tc := range step.ToolCalls {
+				rv.cfg.logger.InfoContext(ctx, "exploration tool call",
+					"tool", tc.ToolName, "args", clip(tc.Arguments, 200), "duration", tc.Duration)
+			}
+		}
 		lastOutput = result.FinalOutput
 
 		output, validationErr := rv.parseAndValidate(schema, result.FinalOutput)
 		if validationErr == nil {
 			resp := &Response{
-				Output:   output,
-				Model:    rv.cfg.model,
-				Usage:    usage,
-				Duration: time.Since(start),
-				Retries:  attempt,
-				Warnings: warnings,
+				Output:    output,
+				Model:     rv.cfg.model,
+				Usage:     usage,
+				Duration:  time.Since(start),
+				Retries:   attempt,
+				Turns:     turns,
+				ToolCalls: toolCalls,
+				Warnings:  warnings,
 			}
 			if usingDefaultSchema {
 				var parsed Review
@@ -130,7 +158,8 @@ func (rv *Reviewer) Review(ctx context.Context, req *Request) (*Response, error)
 				resp.Review = &parsed
 			}
 			rv.cfg.logger.InfoContext(ctx, "review complete",
-				"duration", resp.Duration, "total_tokens", usage.TotalTokens, "retries", attempt)
+				"duration", resp.Duration, "total_tokens", usage.TotalTokens,
+				"retries", attempt, "turns", turns, "tool_calls", toolCalls)
 			return resp, nil
 		}
 
@@ -152,13 +181,17 @@ func (rv *Reviewer) Review(ctx context.Context, req *Request) (*Response, error)
 }
 
 // buildAgent constructs the underlying agent for a compiled schema, choosing
-// between native structured outputs and prompt-enforced JSON.
-func (rv *Reviewer) buildAgent(schema *outputSchema) (*agents.Agent, []string) {
+// between native structured outputs and prompt-enforced JSON, and attaching
+// exploration tools when a workspace is given.
+func (rv *Reviewer) buildAgent(schema *outputSchema, ws *workspace) (*agents.Agent, []string) {
 	var warnings []string
 
 	instructions := rv.cfg.instructions
 	if instructions == "" {
 		instructions = DefaultInstructions
+	}
+	if ws != nil {
+		instructions += explorationInstructions
 	}
 	if rv.cfg.extraInstr != "" {
 		instructions += "\n\n" + rv.cfg.extraInstr
@@ -168,6 +201,9 @@ func (rv *Reviewer) buildAgent(schema *outputSchema) (*agents.Agent, []string) {
 	agent.Model = rv.cfg.model
 	agent.Temperature = rv.cfg.temperature
 	agent.MaxTokens = rv.cfg.maxOutputTokens
+	if ws != nil {
+		agent.Tools = explorationTools(ws)
+	}
 
 	if schema.native != nil {
 		format := libjs.JSONSchema(schema.name, schema.native).
@@ -241,6 +277,14 @@ func extractJSON(s string) (json.RawMessage, error) {
 		}
 	}
 	return nil, fmt.Errorf("output does not contain a valid JSON document")
+}
+
+// clip shortens a string for log output.
+func clip(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "..."
 }
 
 // isStrictCompatible reports whether a schema satisfies the requirements of

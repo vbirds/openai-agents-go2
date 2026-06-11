@@ -28,6 +28,21 @@ Rules for findings:
 
 Respond with a single JSON document in the required output format and nothing else: no markdown fences, no commentary before or after.`
 
+// explorationInstructions is appended to the system prompt when a workspace
+// is attached, turning the single-shot reviewer into an agentic one.
+const explorationInstructions = `
+
+You have read-only tools to explore the repository the change belongs to: read_file (line-numbered file contents), grep (regex search returning path:line matches), and list_dir. The diff and any provided file contents are a starting point, not the whole picture - use the tools to verify your findings against the actual codebase.
+
+Investigation strategy:
+1. Identify every function, type, constant, and interface the diff adds, removes, or changes behaviorally (signatures, return values, error semantics, locking, validation).
+2. For each changed symbol, grep for its usages. Read the call sites: do callers still hold after this change? Look for missed updates, violated assumptions, and broken invariants.
+3. Check the tests covering the changed code (grep for the symbol in *_test.* or test directories). Note behavior changes that no test covers.
+4. When the diff touches error handling, concurrency, or resource lifetimes, read enough surrounding code to confirm whether the issue is real before reporting it.
+5. Investigate before asserting: a finding you verified against call sites deserves high confidence; one you could not verify must say so and carry low confidence.
+
+Budget your exploration: prefer a few targeted grep/read_file calls over reading whole directories, and stop exploring once additional reads stop changing your conclusions. When you are done investigating, output the final JSON review - do not call tools in your final response and do not narrate your exploration.`
+
 // promptModeInstructions is appended to the system prompt when the output
 // schema cannot be enforced natively and must be enforced via the prompt.
 const promptModeInstructions = `

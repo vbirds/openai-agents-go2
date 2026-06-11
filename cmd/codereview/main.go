@@ -6,6 +6,10 @@
 //	# Review the last commit in the current git repository
 //	codereview -git HEAD~1..HEAD
 //
+//	# Agentic review: let the reviewer explore the project (read-only) to
+//	# verify callers, usages, and tests of the changed code
+//	codereview -git HEAD~1..HEAD -workspace .
+//
 //	# Review uncommitted changes in an svn working copy, or a committed revision
 //	codereview -svn wc
 //	codereview -svn 12345
@@ -57,6 +61,8 @@ type cliOptions struct {
 	prompt     string
 	promptFile string
 	schemaPath string
+	workspace  string
+	maxTurns   int
 
 	model           string
 	baseURL         string
@@ -117,8 +123,9 @@ func run() int {
 		fmt.Fprintln(os.Stderr, "warning:", w)
 	}
 	if opts.verbose {
-		fmt.Fprintf(os.Stderr, "model=%s tokens=%d retries=%d duration=%s\n",
-			resp.Model, resp.Usage.TotalTokens, resp.Retries, resp.Duration.Round(time.Millisecond))
+		fmt.Fprintf(os.Stderr, "model=%s tokens=%d retries=%d turns=%d tool_calls=%d duration=%s\n",
+			resp.Model, resp.Usage.TotalTokens, resp.Retries, resp.Turns, resp.ToolCalls,
+			resp.Duration.Round(time.Millisecond))
 	}
 
 	if err := writeOutput(opts, resp); err != nil {
@@ -161,6 +168,8 @@ Flags:
 	fs.StringVar(&opts.prompt, "prompt", "", "extra review guidance for the model")
 	fs.StringVar(&opts.promptFile, "prompt-file", "", "read review guidance from a file")
 	fs.StringVar(&opts.schemaPath, "schema", "", "path to a custom output JSON Schema; default is the built-in review schema")
+	fs.StringVar(&opts.workspace, "workspace", "", "enable agentic exploration: project root the reviewer may read (read-only) to inspect callers, usages, and tests; use '.' for the current directory")
+	fs.IntVar(&opts.maxTurns, "max-turns", 0, "exploration turn budget (default 16; only with -workspace)")
 
 	fs.StringVar(&opts.model, "model", envOr("OPENAI_MODEL", ""), "model to use (default gpt-4o; env OPENAI_MODEL)")
 	fs.StringVar(&opts.baseURL, "base-url", "", "OpenAI-compatible API base URL (env OPENAI_BASE_URL)")
@@ -203,6 +212,12 @@ Flags:
 	if sources > 1 {
 		return nil, nil, fmt.Errorf("-diff, -git, and -svn are mutually exclusive")
 	}
+	if opts.maxTurns < 0 {
+		return nil, nil, fmt.Errorf("-max-turns must be positive")
+	}
+	if opts.maxTurns > 0 && opts.workspace == "" {
+		return nil, nil, fmt.Errorf("-max-turns requires -workspace")
+	}
 	if opts.prompt != "" && opts.promptFile != "" {
 		return nil, nil, fmt.Errorf("-prompt and -prompt-file are mutually exclusive")
 	}
@@ -226,6 +241,9 @@ func buildReviewer(opts *cliOptions) (*review.Reviewer, error) {
 	}
 	if opts.maxOutputTokens > 0 {
 		ropts = append(ropts, review.WithMaxOutputTokens(opts.maxOutputTokens))
+	}
+	if opts.maxTurns > 0 {
+		ropts = append(ropts, review.WithMaxTurns(opts.maxTurns))
 	}
 	ropts = append(ropts,
 		review.WithTimeout(opts.timeout),

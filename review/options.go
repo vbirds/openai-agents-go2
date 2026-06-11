@@ -19,6 +19,9 @@ const (
 	// DefaultMaxInputBytes bounds the rendered prompt (diff + files);
 	// roughly 100k tokens of input.
 	DefaultMaxInputBytes = 400 * 1024
+	// DefaultExplorationTurns is the agent loop budget when a workspace is
+	// attached; without one a review is single-shot.
+	DefaultExplorationTurns = 16
 )
 
 type config struct {
@@ -30,6 +33,7 @@ type config struct {
 	temperature      *float64
 	maxOutputTokens  *int
 	timeout          time.Duration
+	maxTurns         int
 	maxOutputRetries int
 	maxInputBytes    int
 	instructions     string
@@ -118,6 +122,19 @@ func WithTimeout(d time.Duration) Option {
 			return fmt.Errorf("review: timeout must not be negative")
 		}
 		c.timeout = d
+		return nil
+	}
+}
+
+// WithMaxTurns caps the agent loop iterations per attempt when exploring a
+// workspace (default: 16). It has no effect on single-shot reviews without
+// a WorkspaceRoot.
+func WithMaxTurns(n int) Option {
+	return func(c *config) error {
+		if n <= 0 {
+			return fmt.Errorf("review: max turns must be positive, got %d", n)
+		}
+		c.maxTurns = n
 		return nil
 	}
 }

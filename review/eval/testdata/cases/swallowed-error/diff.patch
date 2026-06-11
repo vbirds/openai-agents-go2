@@ -1,0 +1,8 @@
+--- a/handler.go
++++ b/handler.go
+@@ -7,6 +7,12 @@
+ func Greet(id string) string {
+-	return "hello"
++	user, _ := findUser(id)
++	return "hello " + user.Name
+ }

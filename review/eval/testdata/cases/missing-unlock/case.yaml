@@ -1,0 +1,12 @@
+description: >
+  A mutex is locked but an early error return skips the unlock, deadlocking
+  later callers. The review must report the missing unlock on the error path.
+expect:
+  verdicts: [request_changes]
+  findings:
+    - id: missing-unlock
+      file: cache.go
+      lines: [12, 19]
+      categories: [bug]
+      severities: [critical, high]
+      keywords: [unlock, deadlock, lock]

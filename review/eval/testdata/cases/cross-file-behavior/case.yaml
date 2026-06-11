@@ -1,0 +1,13 @@
+description: >
+  ListUsers silently changes behavior to return only active users. A caller
+  in billing/invoices.go relies on it to bill every user, including
+  suspended ones, and is now broken. Finding this requires exploring the
+  workspace; the diff alone looks harmless.
+prompt: Check whether existing callers of the changed function still behave correctly.
+expect:
+  verdicts: [request_changes, comment]
+  findings:
+    - id: caller-break
+      categories: [bug]
+      severities: [critical, high, medium]
+      keywords: [billing, invoice, caller, suspended, inactive]

@@ -247,6 +247,39 @@ codereview -git origin/main..HEAD -fail-on high
 Exit codes: `0` success · `1` usage error · `2` review failed · `3` findings at
 or above the `-fail-on` threshold.
 
+## Evaluation harness
+
+Review quality only improves if you can measure it. The `review/eval`
+package and `cmd/codereview-eval` run a corpus of changes with known
+expected findings through any reviewer configuration and score:
+
+- **recall** — expected issues found (matched by file, line overlap,
+  category, severity, and keywords)
+- **noise** — unmatched findings at medium severity or above
+- **verdict accuracy** and false-positive traps (`forbid` rules, clean-change
+  cases)
+
+```bash
+# Compare configurations on the shipped corpus
+codereview-eval -cases review/eval/testdata/cases
+codereview-eval -cases review/eval/testdata/cases -deep -runs 3
+
+# Quality gate before merging prompt/pipeline changes
+codereview-eval -cases review/eval/testdata/cases -fail-under 0.8 -out report.json
+```
+
+A case is a directory: `case.yaml` (expectations) + `diff.patch` + optional
+`files/` context and `workspace/` tree (enables exploration). The shipped
+corpus covers SQL injection, a swallowed error, a missing unlock, a clean
+refactor (false-positive trap), and a cross-file behavioral break that is
+only findable through workspace exploration. Add cases from your own
+incident history — that corpus is the moat that makes the reviewer better
+on *your* code than any general-purpose tool.
+
+Eval runs hit a live model: they need `OPENAI_API_KEY`, cost tokens, and
+are statistical rather than exactly reproducible (use `-runs N` to require
+consistent passes).
+
 ## Built-in result schema
 
 ```json

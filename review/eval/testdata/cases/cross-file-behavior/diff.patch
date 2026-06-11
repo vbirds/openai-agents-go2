@@ -1,0 +1,14 @@
+--- a/users/users.go
++++ b/users/users.go
+@@ -10,11 +10,14 @@
+ // ListUsers returns all users in the system.
+ func (s *Service) ListUsers() []User {
+ 	var out []User
+ 	for _, u := range s.users {
++		if !u.Active {
++			continue
++		}
+ 		out = append(out, u)
+ 	}
+ 	return out
+ }

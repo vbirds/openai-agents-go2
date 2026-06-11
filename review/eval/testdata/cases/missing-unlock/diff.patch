@@ -1,0 +1,13 @@
+--- a/cache.go
++++ b/cache.go
+@@ -9,9 +9,14 @@
+ func (c *Cache) Set(key string, value string) error {
+ 	c.mu.Lock()
+-	defer c.mu.Unlock()
++	if key == "" {
++		return errEmptyKey
++	}
+ 	c.items[key] = value
++	c.mu.Unlock()
+ 	return nil
+ }

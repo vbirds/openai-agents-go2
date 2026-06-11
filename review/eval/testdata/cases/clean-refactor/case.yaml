@@ -1,0 +1,10 @@
+description: >
+  A harmless refactor: rename a local variable and add a doc comment.
+  Behavior is unchanged. The review must not invent problems.
+expect:
+  clean: true
+  verdicts: [approve, comment]
+  forbid:
+    - id: invented-bug
+      keywords: [bug, race, leak, injection, vulnerability]
+      min_severity: medium

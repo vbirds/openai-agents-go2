@@ -1,0 +1,12 @@
+description: >
+  A user lookup builds SQL by string concatenation from an untrusted
+  parameter. The review must report SQL injection at the query site.
+expect:
+  verdicts: [request_changes]
+  findings:
+    - id: sqli
+      file: store/store.go
+      lines: [8, 9]
+      categories: [security]
+      severities: [critical, high]
+      keywords: [injection, sql]

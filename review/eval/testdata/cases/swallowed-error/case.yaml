@@ -1,0 +1,12 @@
+description: >
+  An error from a lookup is discarded and the possibly-nil result is
+  dereferenced. The review must report the nil dereference / ignored error.
+expect:
+  verdicts: [request_changes]
+  findings:
+    - id: nil-deref
+      file: handler.go
+      lines: [10, 12]
+      categories: [bug]
+      severities: [critical, high, medium]
+      keywords: [nil, error, panic]

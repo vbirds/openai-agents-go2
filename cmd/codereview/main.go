@@ -6,6 +6,10 @@
 //	# Review the last commit in the current git repository
 //	codereview -git HEAD~1..HEAD
 //
+//	# Review uncommitted changes in an svn working copy, or a committed revision
+//	codereview -svn wc
+//	codereview -svn 12345
+//
 //	# Review a patch file with extra guidance, gate CI on high-severity findings
 //	codereview -diff change.patch -prompt "Focus on concurrency" -fail-on high
 //
@@ -49,6 +53,7 @@ const (
 type cliOptions struct {
 	diffPath   string
 	gitRange   string
+	svnTarget  string
 	prompt     string
 	promptFile string
 	schemaPath string
@@ -152,6 +157,7 @@ Flags:
 
 	fs.StringVar(&opts.diffPath, "diff", "", "path to a unified diff file, or '-' to read the diff from stdin")
 	fs.StringVar(&opts.gitRange, "git", "", "git revision range to review (e.g. 'HEAD~1..HEAD', 'main..HEAD'); changed files are loaded automatically")
+	fs.StringVar(&opts.svnTarget, "svn", "", "svn changes to review: 'wc' for working-copy changes, 'N:M' for a revision range, or a revision number; changed files are loaded automatically")
 	fs.StringVar(&opts.prompt, "prompt", "", "extra review guidance for the model")
 	fs.StringVar(&opts.promptFile, "prompt-file", "", "read review guidance from a file")
 	fs.StringVar(&opts.schemaPath, "schema", "", "path to a custom output JSON Schema; default is the built-in review schema")
@@ -188,8 +194,14 @@ Flags:
 	if opts.failOn != "" && opts.schemaPath != "" {
 		return nil, nil, fmt.Errorf("-fail-on requires the built-in schema (remove -schema)")
 	}
-	if opts.diffPath != "" && opts.gitRange != "" {
-		return nil, nil, fmt.Errorf("-diff and -git are mutually exclusive")
+	sources := 0
+	for _, set := range []bool{opts.diffPath != "", opts.gitRange != "", opts.svnTarget != ""} {
+		if set {
+			sources++
+		}
+	}
+	if sources > 1 {
+		return nil, nil, fmt.Errorf("-diff, -git, and -svn are mutually exclusive")
 	}
 	if opts.prompt != "" && opts.promptFile != "" {
 		return nil, nil, fmt.Errorf("-prompt and -prompt-file are mutually exclusive")

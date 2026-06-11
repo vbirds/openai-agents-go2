@@ -110,6 +110,12 @@ export OPENAI_API_KEY=sk-...
 # Review the last commit (changed files are loaded automatically)
 codereview -git HEAD~1..HEAD
 
+# Subversion: review uncommitted working-copy changes, a committed
+# revision, or a revision range
+codereview -svn wc
+codereview -svn 12345
+codereview -svn 12300:12345
+
 # Review a patch with guidance, render markdown for a PR comment
 codereview -diff change.patch -prompt "Focus on security" -format markdown -out review.md
 
@@ -124,6 +130,7 @@ codereview -git origin/main..HEAD -fail-on high
 |------|-------------|
 | `-diff path` | Unified diff file, `-` for stdin |
 | `-git range` | Review a git revision range; loads changed files as context |
+| `-svn target` | Review svn changes: `wc` (working copy), `N:M` (revision range), or a revision number; loads changed files as context |
 | `[file ...]` | Positional args: extra files included as full-file context |
 | `-prompt` / `-prompt-file` | Reviewer guidance |
 | `-schema path` | Custom output JSON Schema (default: built-in review schema) |

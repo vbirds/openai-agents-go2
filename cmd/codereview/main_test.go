@@ -25,6 +25,8 @@ func TestParseFlags(t *testing.T) {
 func TestParseFlagsRejectsConflicts(t *testing.T) {
 	cases := [][]string{
 		{"-diff", "x.patch", "-git", "HEAD~1"},
+		{"-diff", "x.patch", "-svn", "wc"},
+		{"-git", "HEAD~1", "-svn", "100:105"},
 		{"-prompt", "a", "-prompt-file", "b"},
 		{"-format", "xml"},
 		{"-format", "markdown", "-schema", "s.json"},

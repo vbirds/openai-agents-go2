@@ -86,12 +86,16 @@ Key decisions:
   used (codex-cli-inspired: verdict + severity-ranked findings anchored to
   file/line locations) and the result is also returned as a typed
   `*review.Review`.
-- **Dual schema enforcement.** Schemas that fit OpenAI structured outputs are
-  enforced natively via `response_format` (with strict mode when the schema
-  qualifies). Schemas using unsupported keywords (`oneOf`, `$ref`, `format`,
-  ...) automatically fall back to prompt-embedded enforcement. In **both**
-  modes the output is validated client-side with a full JSON Schema validator,
-  so non-OpenAI backends behind `OPENAI_BASE_URL` are covered too.
+- **Layered schema enforcement.** The output schema is always spelled out in
+  the prompt (OpenAI-compatible backends routinely ignore `response_format`,
+  and a model that never saw the schema cannot comply), natively enforced via
+  `response_format` when it fits structured outputs (strict mode when the
+  schema qualifies), and always validated client-side with a full JSON Schema
+  validator. For the built-in schemas a tolerant coercion layer additionally
+  repairs near-miss output before validation — category/severity/verdict
+  synonyms (`"tests"` → `"testing"`), verbal or percentage confidence
+  (`"high"` → `0.9`), stringified line numbers — so weaker backends don't
+  burn retries on literal mismatches.
 - **Self-correcting retries.** Invalid output is fed back to the model with the
   validation error for up to `WithMaxOutputRetries` corrective rounds
   (default 2). Transport-level retries are already handled by the OpenAI SDK.

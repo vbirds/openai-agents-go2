@@ -152,6 +152,10 @@ type outputSchema struct {
 	// lostKeywords lists schema keywords that could not be represented
 	// natively (the reason native is nil).
 	lostKeywords []string
+
+	// coerce enables tolerant output repair (see coerceReviewOutput). Set
+	// only for the built-in schemas, whose field semantics are known.
+	coerce bool
 }
 
 // compileSchema parses and resolves a raw JSON Schema, and attempts to build
@@ -170,7 +174,12 @@ func compileSchema(raw json.RawMessage, name string) (*outputSchema, error) {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)
 	}
 
-	out := &outputSchema{name: name, raw: raw, resolved: resolved}
+	out := &outputSchema{
+		name:     name,
+		raw:      raw,
+		resolved: resolved,
+		coerce:   string(raw) == defaultSchemaJSON || string(raw) == specialistSchemaJSON,
+	}
 	native, lost, err := toNativeSchema(raw)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSchema, err)

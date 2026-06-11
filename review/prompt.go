@@ -43,8 +43,10 @@ Investigation strategy:
 
 Budget your exploration: prefer a few targeted grep/read_file calls over reading whole directories, and stop exploring once additional reads stop changing your conclusions. When you are done investigating, output the final JSON review - do not call tools in your final response and do not narrate your exploration.`
 
-// promptModeInstructions is appended to the system prompt when the output
-// schema cannot be enforced natively and must be enforced via the prompt.
+// promptModeInstructions spells the output schema out in the system prompt.
+// It is always appended - even when response_format enforces the schema
+// natively - because OpenAI-compatible backends routinely ignore
+// response_format, and a model that never saw the schema cannot comply.
 const promptModeInstructions = `
 
 Your entire response MUST be a single JSON document that validates against the following JSON Schema. Output raw JSON only - no markdown code fences, no surrounding text.

@@ -185,12 +185,17 @@ func (rv *Reviewer) buildAgent(name, instructions string, schema *outputSchema, 
 		agent.ResponseFormat = format
 	} else {
 		// The schema uses keywords the structured-outputs API cannot
-		// represent; enforce it via the prompt and validate client-side.
-		instructions += fmt.Sprintf(promptModeInstructions, string(schema.raw))
+		// represent; client-side validation is the only enforcement.
 		warnings = append(warnings, fmt.Sprintf(
-			"output schema uses keywords not supported by native structured outputs (%s); falling back to prompt-enforced JSON with client-side validation",
+			"output schema uses keywords not supported by native structured outputs (%s); relying on prompt-enforced JSON with client-side validation",
 			strings.Join(schema.lostKeywords, ", ")))
 	}
+
+	// Always spell the schema out in the prompt, even when response_format
+	// enforces it natively: OpenAI-compatible backends routinely ignore
+	// response_format, and a model that never saw the schema cannot comply
+	// with it.
+	instructions += fmt.Sprintf(promptModeInstructions, string(schema.raw))
 
 	agent.Instructions = instructions
 	return agent, warnings
@@ -338,6 +343,9 @@ func (rv *Reviewer) parseAndValidate(schema *outputSchema, output string) (json.
 	raw, err := extractJSON(output)
 	if err != nil {
 		return nil, err
+	}
+	if schema.coerce {
+		raw = coerceReviewOutput(raw)
 	}
 	var instance any
 	if err := json.Unmarshal(raw, &instance); err != nil {

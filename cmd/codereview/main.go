@@ -10,6 +10,10 @@
 //	# verify callers, usages, and tests of the changed code
 //	codereview -git HEAD~1..HEAD -workspace .
 //
+//	# Deep review: triage -> parallel specialist reviewers -> adjudicator;
+//	# specialists are configurable via .codereview.yaml at the workspace root
+//	codereview -git origin/main..HEAD -workspace . -deep
+//
 //	# Review uncommitted changes in an svn working copy, or a committed revision
 //	codereview -svn wc
 //	codereview -svn 12345
@@ -36,6 +40,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -63,6 +68,8 @@ type cliOptions struct {
 	schemaPath string
 	workspace  string
 	maxTurns   int
+	deep       bool
+	configPath string
 
 	model           string
 	baseURL         string
@@ -126,6 +133,9 @@ func run() int {
 		fmt.Fprintf(os.Stderr, "model=%s tokens=%d retries=%d turns=%d tool_calls=%d duration=%s\n",
 			resp.Model, resp.Usage.TotalTokens, resp.Retries, resp.Turns, resp.ToolCalls,
 			resp.Duration.Round(time.Millisecond))
+		if len(resp.Specialists) > 0 {
+			fmt.Fprintf(os.Stderr, "specialists=%v\n", resp.Specialists)
+		}
 	}
 
 	if err := writeOutput(opts, resp); err != nil {
@@ -170,6 +180,8 @@ Flags:
 	fs.StringVar(&opts.schemaPath, "schema", "", "path to a custom output JSON Schema; default is the built-in review schema")
 	fs.StringVar(&opts.workspace, "workspace", "", "enable agentic exploration: project root the reviewer may read (read-only) to inspect callers, usages, and tests; use '.' for the current directory")
 	fs.IntVar(&opts.maxTurns, "max-turns", 0, "exploration turn budget (default 16; only with -workspace)")
+	fs.BoolVar(&opts.deep, "deep", false, "deep review: triage routes the change to specialist reviewers running in parallel; an adjudicator verifies findings before the final result")
+	fs.StringVar(&opts.configPath, "review-config", "", "path to a .codereview.yaml specialist configuration (default: auto-discovered at the -workspace root)")
 
 	fs.StringVar(&opts.model, "model", envOr("OPENAI_MODEL", ""), "model to use (default gpt-4o; env OPENAI_MODEL)")
 	fs.StringVar(&opts.baseURL, "base-url", "", "OpenAI-compatible API base URL (env OPENAI_BASE_URL)")
@@ -218,6 +230,9 @@ Flags:
 	if opts.maxTurns > 0 && opts.workspace == "" {
 		return nil, nil, fmt.Errorf("-max-turns requires -workspace")
 	}
+	if opts.configPath != "" && !opts.deep {
+		return nil, nil, fmt.Errorf("-review-config requires -deep")
+	}
 	if opts.prompt != "" && opts.promptFile != "" {
 		return nil, nil, fmt.Errorf("-prompt and -prompt-file are mutually exclusive")
 	}
@@ -244,6 +259,13 @@ func buildReviewer(opts *cliOptions) (*review.Reviewer, error) {
 	}
 	if opts.maxTurns > 0 {
 		ropts = append(ropts, review.WithMaxTurns(opts.maxTurns))
+	}
+	if opts.deep {
+		ropts = append(ropts, review.WithDeepReview(true))
+		if path := discoverReviewConfig(opts); path != "" {
+			fmt.Fprintf(os.Stderr, "using review config %s\n", path)
+			ropts = append(ropts, review.WithConfigFile(path))
+		}
 	}
 	ropts = append(ropts,
 		review.WithTimeout(opts.timeout),
@@ -278,6 +300,22 @@ func writeOutput(opts *cliOptions, resp *review.Response) error {
 		return fmt.Errorf("writing %s: %w", opts.outPath, err)
 	}
 	return nil
+}
+
+// discoverReviewConfig returns the explicit -review-config path, or the
+// .codereview.yaml at the workspace root when one exists.
+func discoverReviewConfig(opts *cliOptions) string {
+	if opts.configPath != "" {
+		return opts.configPath
+	}
+	if opts.workspace == "" {
+		return ""
+	}
+	candidate := filepath.Join(opts.workspace, review.ConfigFileName)
+	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		return candidate
+	}
+	return ""
 }
 
 func envOr(key, fallback string) string {

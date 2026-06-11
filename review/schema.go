@@ -10,32 +10,12 @@ import (
 	libjs "github.com/MitulShah1/openai-agents-go/jsonschema"
 )
 
-// defaultSchemaJSON is the built-in review result schema. It deliberately
-// restricts itself to keywords supported by OpenAI structured outputs in
-// strict mode (every object closes additionalProperties and requires all of
-// its properties), so it is always enforced natively by the model.
-const defaultSchemaJSON = `{
-  "type": "object",
-  "description": "Result of an automated code review.",
-  "additionalProperties": false,
-  "properties": {
-    "summary": {
-      "type": "string",
-      "description": "Short overall assessment of the change (2-4 sentences)."
-    },
-    "verdict": {
-      "type": "string",
-      "enum": ["approve", "request_changes", "comment"],
-      "description": "Overall recommendation: approve if the change is safe to merge, request_changes if it has issues that must be fixed, comment if there are only optional remarks."
-    },
-    "confidence": {
-      "type": "number",
-      "description": "Confidence in the verdict, between 0 and 1."
-    },
-    "findings": {
-      "type": "array",
-      "description": "Individual review comments, ordered from most to least severe. Empty if the change is clean.",
-      "items": {
+// findingItemSchemaJSON describes a single finding. It is shared by the
+// built-in result schema and the internal specialist-stage schema, and
+// deliberately restricts itself to keywords supported by OpenAI structured
+// outputs in strict mode (every object closes additionalProperties and
+// requires all of its properties).
+const findingItemSchemaJSON = `{
         "type": "object",
         "additionalProperties": false,
         "properties": {
@@ -79,15 +59,79 @@ const defaultSchemaJSON = `{
           }
         },
         "required": ["title", "body", "severity", "category", "confidence", "file", "line_start", "line_end", "suggestion"]
-      }
+      }`
+
+// defaultSchemaJSON is the built-in review result schema.
+const defaultSchemaJSON = `{
+  "type": "object",
+  "description": "Result of an automated code review.",
+  "additionalProperties": false,
+  "properties": {
+    "summary": {
+      "type": "string",
+      "description": "Short overall assessment of the change (2-4 sentences)."
+    },
+    "verdict": {
+      "type": "string",
+      "enum": ["approve", "request_changes", "comment"],
+      "description": "Overall recommendation: approve if the change is safe to merge, request_changes if it has issues that must be fixed, comment if there are only optional remarks."
+    },
+    "confidence": {
+      "type": "number",
+      "description": "Confidence in the verdict, between 0 and 1."
+    },
+    "findings": {
+      "type": "array",
+      "description": "Individual review comments, ordered from most to least severe. Empty if the change is clean.",
+      "items": ` + findingItemSchemaJSON + `
     }
   },
   "required": ["summary", "verdict", "confidence", "findings"]
 }`
 
+// specialistSchemaJSON is the internal findings-only schema used by
+// specialist reviewers in deep-review mode; verdict and summary are
+// produced later by the adjudicator.
+const specialistSchemaJSON = `{
+  "type": "object",
+  "description": "Candidate findings from a specialist reviewer.",
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "type": "array",
+      "description": "Findings within this specialist's mandate. Empty if none.",
+      "items": ` + findingItemSchemaJSON + `
+    }
+  },
+  "required": ["findings"]
+}`
+
 // DefaultSchema returns the built-in review result schema as raw JSON.
 func DefaultSchema() json.RawMessage {
 	return json.RawMessage(defaultSchemaJSON)
+}
+
+// triageSchemaJSON builds the strict triage output schema, constraining the
+// selection to the names of the offered specialists.
+func triageSchemaJSON(names []string) (json.RawMessage, error) {
+	enum := make([]any, len(names))
+	for i, n := range names {
+		enum[i] = n
+	}
+	schema := map[string]any{
+		"type":                 "object",
+		"description":          "Specialist reviewers selected for this change.",
+		"additionalProperties": false,
+		"properties": map[string]any{
+			"selected": map[string]any{
+				"type":        "array",
+				"description": "Names of the specialists worth running on this change. Empty if none apply.",
+				"items":       map[string]any{"type": "string", "enum": enum},
+			},
+		},
+		"required": []any{"selected"},
+	}
+	return json.Marshal(schema)
 }
 
 // outputSchema is the compiled form of an output schema: a validator that is

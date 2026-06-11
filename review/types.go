@@ -56,6 +56,10 @@ type Request struct {
 	// callers, usages, and tests of the changed code before judging it.
 	// Leave empty for single-shot review of the provided inputs only.
 	WorkspaceRoot string
+
+	// Specialists overrides the configured specialist roster for this
+	// request only (deep-review mode). Empty uses the Reviewer's roster.
+	Specialists []Specialist
 }
 
 // Validate checks that the request contains enough material to review.
@@ -73,6 +77,11 @@ func (r *Request) Validate() error {
 	}
 	if r.Schema != nil && !json.Valid(r.Schema) {
 		return fmt.Errorf("%w: schema is not valid JSON", ErrInvalidRequest)
+	}
+	for i := range r.Specialists {
+		if err := r.Specialists[i].Validate(); err != nil {
+			return fmt.Errorf("%w: specialists[%d]: %v", ErrInvalidRequest, i, err)
+		}
 	}
 	return nil
 }
@@ -115,6 +124,10 @@ type Response struct {
 
 	// ToolCalls is the total number of exploration tool invocations.
 	ToolCalls int `json:"tool_calls"`
+
+	// Specialists lists the specialist reviewers that ran, in deep-review
+	// mode. Nil for single-agent reviews.
+	Specialists []string `json:"specialists,omitempty"`
 
 	// Warnings lists non-fatal conditions encountered during the run, such
 	// as input truncation or fallback to prompt-enforced schema mode.

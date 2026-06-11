@@ -29,8 +29,39 @@ Two ways to use it:
               Response{Output, Review, Usage, Turns, ToolCalls, ...}
 ```
 
+Deep-review mode (`WithDeepReview` / `-deep`) replaces the single agent run
+with a multi-agent pipeline:
+
+```
+                       ┌─ correctness ──┐
+ diff ─► triage ───────┼─ security ─────┼─► adjudicator ─► final JSON
+        (rules first,  ├─ concurrency ──┤   verifies every candidate
+         LLM for the   └─ custom... ────┘   against the code, dedups,
+         undecided)      parallel,          calibrates severity and
+                         category-gated     confidence, synthesizes
+```
+
 Key decisions:
 
+- **Specialists are data, not code.** Built-ins (correctness, security,
+  concurrency, performance) and externally configured specialists follow the
+  same execution path. Configure via Go options (`WithSpecialists`,
+  `AddSpecialist`, `DisableSpecialists`), per-request (`Request.Specialists`),
+  or a repo-level `.codereview.yaml` (`WithConfigFile`, auto-discovered by
+  the CLI at the workspace root). Precedence: request > options/config file >
+  built-ins (options apply in order).
+- **Rules before LLM.** Specialist triggers (`always`, path globs, diff
+  keywords) are evaluated in code; only undecided specialists go to a
+  single-shot LLM triage (use `WithTriageModel` for a cheaper model). Triage
+  failure degrades to running everything — recall-safe, because of the next
+  point.
+- **The adjudicator is the quality gate.** Specialist findings never reach
+  the user directly: a category whitelist filters out-of-mandate findings in
+  code, then an adjudicator (with workspace tools, when available) re-checks
+  every candidate against the code, drops what it cannot verify, merges
+  duplicates, calibrates severity/confidence, and synthesizes the final
+  result in the requested schema. Specialist failures degrade to warnings,
+  never failed reviews.
 - **Agentic exploration (optional).** Setting `Request.WorkspaceRoot` gives
   the reviewer read-only tools — `read_file` (line-numbered), `grep` (RE2,
   `path:line` matches), `list_dir` — sandboxed to the project directory
@@ -103,6 +134,41 @@ resp, err := reviewer.Review(ctx, &review.Request{
 // resp.Turns and resp.ToolCalls report how much exploration happened.
 ```
 
+### Deep review (multi-agent)
+
+```go
+reviewer, err := review.New(
+    review.WithDeepReview(true),
+    review.WithTriageModel("gpt-4o-mini"),          // cheap routing
+    review.AddSpecialist(review.Specialist{         // org-specific expert
+        Name:        "api-compat",
+        Description: "Detects breaking changes to exported APIs.",
+        Instructions: "You check exclusively for breaking API changes: ...",
+        Categories:  []string{"bug", "other"},
+        Triggers:    review.Trigger{Paths: []string{"api/**"}},
+    }),
+    review.DisableSpecialists("performance"),
+)
+// resp.Specialists lists who ran; warnings record any stage degradations.
+```
+
+Or configure per repository with `.codereview.yaml` (CLI auto-discovers it
+at the `-workspace` root):
+
+```yaml
+specialists:
+  - name: api-compat
+    description: Detects breaking changes to exported APIs.
+    triggers:
+      paths: ["api/**", "**/*.proto"]
+    instructions: |
+      You check exclusively for breaking API changes: ...
+    categories: [bug, other]
+  - name: security      # tune a built-in: only set fields override
+    model: gpt-4o
+disable: [performance]
+```
+
 ### Custom output schema
 
 ```go
@@ -140,6 +206,10 @@ codereview -git HEAD~1..HEAD
 # usages, and tests of the changed code before judging it
 codereview -git HEAD~1..HEAD -workspace .
 
+# Deep review: parallel specialists + verification, with repo-level
+# specialist config auto-discovered at the workspace root
+codereview -git origin/main..HEAD -workspace . -deep
+
 # Subversion: review uncommitted working-copy changes, a committed
 # revision, or a revision range
 codereview -svn wc
@@ -166,6 +236,8 @@ codereview -git origin/main..HEAD -fail-on high
 | `-schema path` | Custom output JSON Schema (default: built-in review schema) |
 | `-workspace path` | Enable agentic exploration rooted at this directory (read-only) |
 | `-max-turns n` | Exploration turn budget (default 16; requires `-workspace`) |
+| `-deep` | Multi-agent pipeline: triage → parallel specialists → adjudicator |
+| `-review-config path` | Specialist config file (default: `.codereview.yaml` at the workspace root) |
 | `-model`, `-base-url`, `-temperature`, `-max-output-tokens` | Model settings (env: `OPENAI_MODEL`, `OPENAI_BASE_URL`) |
 | `-timeout`, `-max-retries`, `-max-input-kb` | Run limits |
 | `-format json\|markdown`, `-out path` | Output control |

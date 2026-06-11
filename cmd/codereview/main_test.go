@@ -39,7 +39,8 @@ func TestParseFlagsRejectsConflicts(t *testing.T) {
 		{"-format", "xml"},
 		{"-format", "markdown", "-schema", "s.json"},
 		{"-fail-on", "high", "-schema", "s.json"},
-		{"-max-turns", "5"}, // requires -workspace
+		{"-max-turns", "5"},               // requires -workspace
+		{"-review-config", "review.yaml"}, // requires -deep
 	}
 	for _, args := range cases {
 		if _, _, err := parseFlags(args); err == nil {

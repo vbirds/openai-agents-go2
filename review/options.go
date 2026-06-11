@@ -39,6 +39,9 @@ type config struct {
 	instructions     string
 	extraInstr       string
 	logger           *slog.Logger
+	deepReview       bool
+	specialists      []Specialist
+	triageModel      string
 }
 
 // Option configures a Reviewer.
@@ -176,6 +179,97 @@ func WithInstructions(instructions string) Option {
 func WithExtraInstructions(extra string) Option {
 	return func(c *config) error {
 		c.extraInstr = extra
+		return nil
+	}
+}
+
+// WithDeepReview toggles the multi-agent pipeline: triage routes the change
+// to specialist reviewers that run in parallel, and an adjudicator verifies
+// their findings against the code before synthesizing the final result.
+// Costs more tokens and latency; best for thorough pre-merge review.
+func WithDeepReview(enabled bool) Option {
+	return func(c *config) error {
+		c.deepReview = enabled
+		return nil
+	}
+}
+
+// WithSpecialists replaces the entire specialist roster (built-ins
+// included) used by deep-review mode.
+func WithSpecialists(specs ...Specialist) Option {
+	return func(c *config) error {
+		for i := range specs {
+			if err := specs[i].Validate(); err != nil {
+				return err
+			}
+		}
+		c.specialists = append([]Specialist(nil), specs...)
+		return nil
+	}
+}
+
+// AddSpecialist appends a specialist to the roster, replacing any existing
+// specialist with the same name.
+func AddSpecialist(spec Specialist) Option {
+	return func(c *config) error {
+		if err := spec.Validate(); err != nil {
+			return err
+		}
+		for i := range c.specialists {
+			if c.specialists[i].Name == spec.Name {
+				c.specialists[i] = spec
+				return nil
+			}
+		}
+		c.specialists = append(c.specialists, spec)
+		return nil
+	}
+}
+
+// DisableSpecialists removes specialists from the roster by name.
+func DisableSpecialists(names ...string) Option {
+	return func(c *config) error {
+		disabled := make(map[string]bool, len(names))
+		for _, n := range names {
+			disabled[n] = true
+		}
+		kept := c.specialists[:0]
+		for _, s := range c.specialists {
+			if !disabled[s.Name] {
+				kept = append(kept, s)
+			}
+		}
+		c.specialists = kept
+		return nil
+	}
+}
+
+// WithTriageModel selects a (typically cheaper) model for the triage stage
+// of deep-review mode. Defaults to the main model.
+func WithTriageModel(model string) Option {
+	return func(c *config) error {
+		if model == "" {
+			return fmt.Errorf("review: triage model must not be empty")
+		}
+		c.triageModel = model
+		return nil
+	}
+}
+
+// WithConfigFile loads a .codereview.yaml configuration file and merges it
+// into the specialist roster. Options are applied in order, so place this
+// after WithSpecialists when combining them.
+func WithConfigFile(path string) Option {
+	return func(c *config) error {
+		fc, err := LoadFileConfig(path)
+		if err != nil {
+			return err
+		}
+		merged, err := fc.apply(c.specialists)
+		if err != nil {
+			return err
+		}
+		c.specialists = merged
 		return nil
 	}
 }

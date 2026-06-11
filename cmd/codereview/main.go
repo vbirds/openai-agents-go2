@@ -60,12 +60,12 @@ const (
 )
 
 type cliOptions struct {
-	diffPath   string
-	gitRange   string
-	svnTarget  string
-	prompt     string
-	promptFile string
-	schemaPath string
+	diffPath        string
+	gitRange        string
+	svnTarget       string
+	prompt          string
+	promptFile      string
+	schemaPath      string
 	workspace       string
 	maxTurns        int
 	deep            bool
@@ -73,6 +73,7 @@ type cliOptions struct {
 	conventionsPath string
 
 	model           string
+	apiKey          string
 	baseURL         string
 	temperature     float64
 	tempSet         bool
@@ -186,6 +187,7 @@ Flags:
 	fs.StringVar(&opts.configPath, "review-config", "", "path to a .codereview.yaml specialist configuration (default: auto-discovered at the -workspace root)")
 
 	fs.StringVar(&opts.model, "model", envOr("OPENAI_MODEL", ""), "model to use (default gpt-4o; env OPENAI_MODEL)")
+	fs.StringVar(&opts.apiKey, "api-key", "", "OpenAI API key (default: env OPENAI_API_KEY)")
 	fs.StringVar(&opts.baseURL, "base-url", "", "OpenAI-compatible API base URL (env OPENAI_BASE_URL)")
 	fs.Float64Var(&opts.temperature, "temperature", 0, "sampling temperature (default: model default)")
 	fs.IntVar(&opts.maxOutputTokens, "max-output-tokens", 0, "cap on response tokens (default: model default)")
@@ -242,13 +244,20 @@ Flags:
 }
 
 func buildReviewer(opts *cliOptions) (*review.Reviewer, error) {
-	if os.Getenv("OPENAI_API_KEY") == "" && opts.baseURL == "" && os.Getenv("OPENAI_BASE_URL") == "" {
-		return nil, fmt.Errorf("OPENAI_API_KEY is not set")
+	apiKey := opts.apiKey
+	if apiKey == "" {
+		apiKey = os.Getenv("OPENAI_API_KEY")
+	}
+	if apiKey == "" && opts.baseURL == "" && os.Getenv("OPENAI_BASE_URL") == "" {
+		return nil, fmt.Errorf("no API key: pass -api-key or set OPENAI_API_KEY")
 	}
 
 	var ropts []review.Option
 	if opts.model != "" {
 		ropts = append(ropts, review.WithModel(opts.model))
+	}
+	if apiKey != "" {
+		ropts = append(ropts, review.WithAPIKey(apiKey))
 	}
 	if opts.baseURL != "" {
 		ropts = append(ropts, review.WithBaseURL(opts.baseURL))

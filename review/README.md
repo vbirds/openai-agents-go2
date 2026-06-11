@@ -91,11 +91,13 @@ Key decisions:
   and a model that never saw the schema cannot comply), natively enforced via
   `response_format` when it fits structured outputs (strict mode when the
   schema qualifies), and always validated client-side with a full JSON Schema
-  validator. For the built-in schemas a tolerant coercion layer additionally
-  repairs near-miss output before validation — category/severity/verdict
-  synonyms (`"tests"` → `"testing"`), verbal or percentage confidence
-  (`"high"` → `0.9`), stringified line numbers — so weaker backends don't
-  burn retries on literal mismatches.
+  validator. A tolerant coercion layer additionally repairs near-miss output
+  before validation: built-in schemas get semantic synonym maps (`"tests"` →
+  `"testing"`, `"high"` → `0.9`), and **custom schemas get generic
+  schema-driven repair** — `const` values restored, enum case/`-`/`_`
+  near-matches snapped (`"Major"` → `"major"`), stringified
+  numbers/booleans parsed, unknown keys dropped from closed objects — so
+  weaker backends don't burn retries on literal mismatches.
 - **Self-correcting retries.** Invalid output is fed back to the model with the
   validation error for up to `WithMaxOutputRetries` corrective rounds
   (default 2). Transport-level retries are already handled by the OpenAI SDK.

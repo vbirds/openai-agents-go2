@@ -345,7 +345,12 @@ func (rv *Reviewer) parseAndValidate(schema *outputSchema, output string) (json.
 		return nil, err
 	}
 	if schema.coerce {
+		// Built-in schemas: semantic repair with known synonym maps.
 		raw = coerceReviewOutput(raw)
+	} else {
+		// Custom schemas: generic schema-driven repair (const, enum
+		// near-matches, type conversions, closed-object cleanup).
+		raw = coerceToSchema(raw, schema.raw)
 	}
 	var instance any
 	if err := json.Unmarshal(raw, &instance); err != nil {

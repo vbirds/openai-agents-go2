@@ -528,6 +528,25 @@ cd examples/25_multi_provider && go run main.go
 
 ---
 
+### 26_code_review - Code Review Agent
+
+**Automated code review** - Reviewing a diff with file context and getting schema-validated JSON results via the [`review`](../review/README.md) package.
+
+```bash
+cd examples/26_code_review && go run main.go
+```
+
+**Demonstrates:**
+- Reviewing a unified diff with full-file context
+- Built-in review schema with typed findings (severity, category, file/line locations)
+- Custom output JSON Schemas with client-side validation
+- Reviewer guidance prompts and request metadata
+- The companion `codereview` CLI lives in [`cmd/codereview`](../cmd/codereview)
+
+**Use Case:** PR review bots, CI quality gates, pre-commit review
+
+---
+
 ## 🎯 Common Patterns
 
 ### Creating an Agent
